@@ -321,7 +321,11 @@ struct FChooserToolsetEvaluationResult
 	UPROPERTY(BlueprintReadOnly, Category = "ChooserToolset")
 	TArray<TObjectPtr<UObject>> Results;
 
-	/** Rows that produced those results, in the same order. */
+	/**
+	 * Rows that produced those results, in the same order. A lone -2 means every row failed and the
+	 * fallback row answered. Empty when the table declares no object parameter: the chooser records
+	 * the rows it picked only for the object it is debugging, and it needs one to name.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "ChooserToolset")
 	TArray<int32> SelectedRows;
 

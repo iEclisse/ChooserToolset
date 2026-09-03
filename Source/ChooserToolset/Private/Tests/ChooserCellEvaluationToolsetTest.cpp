@@ -663,6 +663,27 @@ void FChooserToolsetTest_CellsAndEvaluation::Define()
 					}
 				});
 
+			It("leaves a debug target the caller set alone", [this]()
+				{
+					UChooserTable* Table = MakeBoolTable(NextName(TEXT("CT_DebugKeep")), { MakeContext() });
+					if (!TestNotNull("table created", Table))
+					{
+						return;
+					}
+
+					// Evaluating points the debug target at the caller's own context object so the
+					// chooser records the row it picked, but a target set for Play In Editor has to
+					// survive that.
+					UChooserEvaluationToolset::SetChooserDebugTarget(Table, TEXT("SomeActor"));
+
+					FChooserToolsetEvaluationParameter Context;
+					Context.ParameterIndex = 0;
+					Context.Object = MakeContext();
+					UChooserEvaluationToolset::EvaluateChooserTable(Table, { Context }, false, -1);
+
+					TestEqual("the target still stands", Table->GetDebugTargetName(), FString(TEXT("SomeActor")));
+				});
+
 			It("reports nothing without a table", [this]()
 				{
 					TestTrue("no rows", UChooserEvaluationToolset::GetChooserDebugSelectedRows(nullptr).IsEmpty());

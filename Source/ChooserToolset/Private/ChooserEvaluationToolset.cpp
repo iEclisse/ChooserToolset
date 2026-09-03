@@ -23,6 +23,35 @@ namespace
 			});
 	}
 
+	/**
+	 * The name the chooser debugger knows a context object by, or empty when the table never saw it.
+	 *
+	 * UpdateDebugging registers every context object it evaluates under a display name that may carry
+	 * the owning actor and the world it came from, so the name is read back from the table instead of
+	 * being rebuilt here.
+	 */
+	FString FindDebugTargetName(const UChooserTable* Table, const UObject* ContextObject)
+	{
+		if (!ContextObject)
+		{
+			return FString();
+		}
+
+		const FString ObjectName = ContextObject->GetName();
+		const FString DecoratedPrefix = ObjectName + TEXT(" ");
+
+		FString Match;
+		Table->IterateRecentContextObjects(
+			[&Match, &ObjectName, &DecoratedPrefix](const FString& Name)
+			{
+				if (Match.IsEmpty() && (Name == ObjectName || Name.StartsWith(DecoratedPrefix)))
+				{
+					Match = Name;
+				}
+			});
+		return Match;
+	}
+
 	/** Reads every field of a struct into text, keyed by "ParameterIndex.FieldName". */
 	void CollectStructFields(const UScriptStruct* Struct, const void* Memory, int32 ParameterIndex, TMap<FString, FString>& OutValues)
 	{
@@ -70,6 +99,8 @@ FChooserToolsetEvaluationResult UChooserEvaluationToolset::EvaluateChooserTable(
 	Context.Params.Reserve(ParameterCount);
 	Context.ObjectParams.Reserve(ParameterCount);
 
+	const UObject* DebugContextObject = nullptr;
+
 	for (int32 ParameterIndex = 0; ParameterIndex < ParameterCount; ++ParameterIndex)
 	{
 		const FChooserToolsetEvaluationParameter* Supplied = FindParameter(Parameters, ParameterIndex);
@@ -85,6 +116,10 @@ FChooserToolsetEvaluationResult UChooserEvaluationToolset::EvaluateChooserTable(
 				return Result;
 			}
 			Context.AddObjectParam(Object);
+			if (!DebugContextObject)
+			{
+				DebugContextObject = Object;
+			}
 			continue;
 		}
 
@@ -119,6 +154,19 @@ FChooserToolsetEvaluationResult UChooserEvaluationToolset::EvaluateChooserTable(
 
 	Table->SetDebugSelectedRows({});
 
+	// The chooser only records the row it picked while it evaluates the object it is debugging, which
+	// in a game is whatever the user picked in the editor. Pointing the debug target at the caller's
+	// own context object for the length of this call is what makes SelectedRows report anything.
+	// UpdateDebugging has to run first: it is what registers the object under its debugger name.
+	UChooserTable* Root = Table->GetRootChooser();
+	const FString PreviousDebugTarget = Root->GetDebugTargetName();
+	Table->UpdateDebugging(Context);
+	const FString DebugTarget = FindDebugTargetName(Table, DebugContextObject);
+	if (!DebugTarget.IsEmpty())
+	{
+		Root->SetDebugTarget(DebugTarget);
+	}
+
 	TArray<TObjectPtr<UObject>> Selected;
 	UChooserTable::EvaluateChooser(Context, Table,
 		FObjectChooserBase::FObjectChooserIteratorCallback::CreateLambda(
@@ -129,6 +177,8 @@ FChooserToolsetEvaluationResult UChooserEvaluationToolset::EvaluateChooserTable(
 					? FObjectChooserBase::EIteratorStatus::Continue
 					: FObjectChooserBase::EIteratorStatus::Stop;
 			}));
+
+	Root->SetDebugTarget(PreviousDebugTarget);
 
 	Result.Results = MoveTemp(Selected);
 	Result.SelectedRows = Table->GetDebugSelectedRows();
